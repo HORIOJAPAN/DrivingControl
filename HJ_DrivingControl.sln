@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2013
+VisualStudioVersion = 12.0.31101.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HJ_DrivingControl", "HJ_DrivingControl\HJ_DrivingControl.vcxproj", "{DB4CECF5-28FF-414A-AB5B-E739F655B87B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{DB4CECF5-28FF-414A-AB5B-E739F655B87B}.Debug|Win32.ActiveCfg = Debug|Win32
+		{DB4CECF5-28FF-414A-AB5B-E739F655B87B}.Debug|Win32.Build.0 = Debug|Win32
+		{DB4CECF5-28FF-414A-AB5B-E739F655B87B}.Release|Win32.ActiveCfg = Release|Win32
+		{DB4CECF5-28FF-414A-AB5B-E739F655B87B}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
