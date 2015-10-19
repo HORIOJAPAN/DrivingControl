@@ -29,24 +29,30 @@ private:
 	double	radian;					// 計算後の回転角
 	double	distance;				// 計算後の移動距離
 
+	const int wheelRadius = 530;
+	const double dDISTANCE = 24.87094184; // 1カウント当たりの距離(タイヤ径を72分割)
+	const double leftCoefficient;
+	const double rightCoefficient;
+
 public:
 	// もろもろの初期化処理
-	DrivingControl( string fname );
+	DrivingControl( string fname, double coefficientL, double coefficientR );
 
 	// 次の点を読み込む
 	bool getNextPoint();
 
 	// 回転角を計算
-	void	calcRotationAngle();
+	void	calcRotationAngle(int LRcount[]);
 	// 距離を計算
-	void	calcMovingDistance();
+	void	calcMovingDistance(int LRcount[]);
 };
 
 /*
  * コンストラクタ
  * 経路ファイルを読み込んでヘッダをとばす
  */
-DrivingControl::DrivingControl(string fname) : fileName(fname)
+DrivingControl::DrivingControl(string fname , double coefficientL , double coefficientR) 
+	: fileName(fname), leftCoefficient(coefficientL), rightCoefficient(coefficientR)
 {
 	// 経路データを読み込む
 	ifs.open(fileName);
@@ -99,7 +105,7 @@ bool DrivingControl::getNextPoint()
 }
 
 // 外積で回転角を計算
-void	DrivingControl::calcRotationAngle()
+void	DrivingControl::calcRotationAngle(int LRcount[])
 {
 	// 3点からベクトルを2つ用意
 	int vector1_x, vector1_y;
@@ -121,10 +127,14 @@ void	DrivingControl::calcRotationAngle()
 
 	cout << "rad:" << radian << ", deg:" << radian / PI * 180 << endl;
 	cout << "rad:" << orientation << ", deg:" << orientation / PI * 180 << endl;
+
+	LRcount[0] = (wheelRadius * radian) / (dDISTANCE * leftCoefficient); // Left
+	LRcount[1] = -(wheelRadius * radian) / (dDISTANCE * rightCoefficient); // Right
+
 }
 
 // 距離を計算
-void	DrivingControl::calcMovingDistance()
+void	DrivingControl::calcMovingDistance(int LRcount[])
 {
 	double	x_disp = x_next - x_now;
 	double	y_disp = y_next - y_now;
@@ -132,15 +142,23 @@ void	DrivingControl::calcMovingDistance()
 	distance = sqrt(x_disp*x_disp + y_disp*y_disp);
 
 	cout << "distance[m]:" << distance * 0.05 << endl;
+
+	LRcount[0] = distance / (dDISTANCE * leftCoefficient); // Left
+	LRcount[1] = distance / (dDISTANCE * rightCoefficient); // Right
+
 }
 
 void main()
 {
-	DrivingControl DC("test01.rt");
+	int LR[2];
+
+	DrivingControl DC("test01.rt" , 1 , 1);
 	while (DC.getNextPoint())
 	{
-		DC.calcRotationAngle();
-		DC.calcMovingDistance();		
+		DC.calcRotationAngle(LR);
+		cout << "回転:" << LR[0] << "," << LR[1] << endl;
+		DC.calcMovingDistance(LR);
+		cout << "直進:" << LR[0] << "," << LR[1] << endl;
 	}
 
 	cout << "complete" << endl;
