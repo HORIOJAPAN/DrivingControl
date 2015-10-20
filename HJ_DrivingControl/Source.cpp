@@ -29,8 +29,8 @@ private:
 	double	radian;					// 計算後の回転角
 	double	distance;				// 計算後の移動距離
 
-	const int wheelRadius = 530;
-	const double dDISTANCE = 24.87094184; // 1カウント当たりの距離(タイヤ径を72分割)
+	const int wheelDistance = 530 / 2;	// タイヤ間距離の半分[mm]
+	const double dDISTANCE = 24.87094184; // 1カウント当たりの距離[mm](タイヤ径を72分割)
 	const double leftCoefficient;
 	const double rightCoefficient;
 
@@ -128,8 +128,8 @@ void	DrivingControl::calcRotationAngle(int LRcount[])
 	cout << "rad:" << radian << ", deg:" << radian / PI * 180 << endl;
 	cout << "rad:" << orientation << ", deg:" << orientation / PI * 180 << endl;
 
-	LRcount[0] = (wheelRadius * radian) / (dDISTANCE * leftCoefficient); // Left
-	LRcount[1] = -(wheelRadius * radian) / (dDISTANCE * rightCoefficient); // Right
+	LRcount[0] = (wheelDistance * radian) / (dDISTANCE * leftCoefficient); // Left
+	LRcount[1] = -(wheelDistance * radian) / (dDISTANCE * rightCoefficient); // Right
 
 }
 
@@ -143,8 +143,8 @@ void	DrivingControl::calcMovingDistance(int LRcount[])
 
 	cout << "distance[m]:" << distance * 0.05 << endl;
 
-	LRcount[0] = distance / (dDISTANCE * leftCoefficient); // Left
-	LRcount[1] = distance / (dDISTANCE * rightCoefficient); // Right
+	LRcount[0] = 5*distance / (dDISTANCE * leftCoefficient); // Left
+	LRcount[1] = 5*distance / (dDISTANCE * rightCoefficient); // Right
 
 }
 
