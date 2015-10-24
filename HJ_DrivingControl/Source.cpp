@@ -1,10 +1,50 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <sstream>
+#include <iomanip>
+#include <Windows.h>
+
 
 #define PI 3.14159265359
 
 using namespace std;
+
+const string DIRPATH = "C:\\Users\\user\\Documents\\なかむら\\つくばチャレンジ2015\\測定データ\\20151023130844";
+const int ENCODER_COM = 1;
+const int CONTROLLER_COM = 1;
+
+/*
+*	概要:
+*		Arduinoとシリアル通信を行うためのハンドルを取得する
+*	引数：
+*		HANDLE&	hComm	ハンドル変数への参照
+*	返り値:
+*		なし
+*/
+void getArduinoHandle(int arduinoCOM, HANDLE& hComm)
+{
+	//シリアルポートを開いてハンドルを取得
+	string com = "\\\\.\\COM" + to_string(arduinoCOM);
+	hComm = CreateFile(com.c_str(), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (hComm == INVALID_HANDLE_VALUE){
+		printf("シリアルポートを開くことができませんでした。");
+		char z;
+		z = getchar();
+		return;
+	}
+	//ポートを開けていれば通信設定を行う
+	else
+	{
+		DCB lpTest;
+		GetCommState(hComm, &lpTest);
+		lpTest.BaudRate = 9600;
+		lpTest.ByteSize = 8;
+		lpTest.Parity = NOPARITY;
+		lpTest.StopBits = ONESTOPBIT;
+		SetCommState(hComm, &lpTest);
+	}
+}
 
 class DrivingControl
 {
@@ -34,25 +74,46 @@ private:
 	const double leftCoefficient;
 	const double rightCoefficient;
 
+	// エンコーダの値関連
+	int		encoderCOM;
+	HANDLE	hEncoderComm;
+	bool	isEncoderInitialized = false;
+	int		leftCount, rightCount;
+
+	// Arduinoへの駆動指令関連
+	int		controllerCOM;
+	HANDLE	hControllerComm;
+	enum Direction	{ STOP, FORWARD, BACKWARD , RIGHT , LEFT };
+	int		aimCount_L, aimCount_R;
+
+	/// エンコーダからカウント数を取得して積算する
+	void getEncoderCount();
+	///  Arduinoへ駆動指令を送信
+	void sendDrivingCommand(Direction direction);
+	/// 指令した駆動の完了を待機
+	void waitDriveComplete();
+
 public:
 	// もろもろの初期化処理
-	DrivingControl( string fname, double coefficientL, double coefficientR );
+	DrivingControl(string fname, double coefficientL, double coefficientR, int arduioCOM, int ctrlrCOM);
 
 	// 次の点を読み込む
 	bool getNextPoint();
 
 	// 回転角を計算
-	void	calcRotationAngle(int LRcount[]);
+	void	calcRotationAngle();
 	// 距離を計算
-	void	calcMovingDistance(int LRcount[]);
+	void	calcMovingDistance();
+
+	void	run();
 };
 
 /*
  * コンストラクタ
  * 経路ファイルを読み込んでヘッダをとばす
  */
-DrivingControl::DrivingControl(string fname , double coefficientL , double coefficientR) 
-	: fileName(fname), leftCoefficient(coefficientL), rightCoefficient(coefficientR)
+DrivingControl::DrivingControl(string fname, double coefficientL, double coefficientR, int ecdrCOM , int ctrlrCOM)
+	: fileName(fname), leftCoefficient(coefficientL), rightCoefficient(coefficientR), encoderCOM(ecdrCOM), controllerCOM(ctrlrCOM)
 {
 	// 経路データを読み込む
 	ifs.open(fileName);
@@ -70,6 +131,8 @@ DrivingControl::DrivingControl(string fname , double coefficientL , double coeff
 	// 初めの回転角計算用として原点の少し後方に点を追加
 	x_now = x_next - 5;
 	y_now = y_next;
+
+	getArduinoHandle(encoderCOM, hEncoderComm);
 }
 
 /*
@@ -104,8 +167,151 @@ bool DrivingControl::getNextPoint()
 	return true;
 }
 
+void DrivingControl::getEncoderCount()
+{
+	unsigned char	sendbuf[1];
+	unsigned char	receive_data[2];
+	unsigned long	len;
+
+	// バッファクリア
+	memset(sendbuf, 0x00, sizeof(sendbuf));
+	// 通信バッファクリア
+	PurgeComm(hEncoderComm, PURGE_RXCLEAR);
+	// 送信
+	WriteFile(hEncoderComm, &sendbuf, 1, &len, NULL);
+
+	// バッファクリア
+	memset(receive_data, 0x00, sizeof(receive_data));
+	// 通信バッファクリア
+	PurgeComm(hEncoderComm, PURGE_RXCLEAR);
+	// Arduinoからデータを受信
+	ReadFile(hEncoderComm, &receive_data, 2, &len, NULL);
+
+	//初期化されていなければ初期化(初めのデータを捨てる)
+	if (!isEncoderInitialized)
+	{
+		isEncoderInitialized = true;
+		return;
+	}
+
+	leftCount += (signed char)receive_data[0];
+	rightCount += (signed char)receive_data[1];
+}
+
+void DrivingControl::sendDrivingCommand( Direction direction)
+{
+	unsigned char	sendbuf[18];
+	unsigned char	receive_data[18];
+	unsigned long	len;
+
+	unsigned char	mode;
+	unsigned char	sign1,sign2;
+	int				forward_int, crosswise_int, delay_int;
+	ostringstream	forward_sout, crosswise_sout, delay_sout;
+	string			forward_str , crosswise_str, delay_str;
+
+	mode = '1';
+	delay_int = 99999;
+
+	switch (direction)
+	{
+	case STOP:
+		mode = '0';
+		forward_int = 0;
+		crosswise_int = 0;
+		break;
+
+	case FORWARD:
+		forward_int = -1000;
+		crosswise_int = 405;
+		break;
+
+	case BACKWARD:
+		forward_int = 600;
+		crosswise_int = 509;
+		break;
+
+	case RIGHT:
+		forward_int = -380;
+		crosswise_int = -1500;
+		break;
+
+	case LEFT:
+		forward_int = 0;
+		crosswise_int = 1500;
+		break;
+
+	default:
+		break;
+	}
+
+	if (forward_int < 0)
+	{
+		forward_int *= -1;
+		sign1 = '1';
+	}
+	else sign1 = '0';
+
+	forward_sout << setfill('0') << setw(4) << forward_int;
+	forward_str = forward_sout.str();
+
+	if (crosswise_int < 0)
+	{
+		crosswise_int *= -1;
+		sign2 = '1';
+	}
+	else sign2 = '0';
+
+	crosswise_sout << setfill('0') << setw(4) << crosswise_int;
+	crosswise_str = crosswise_sout.str();
+
+	delay_sout << setfill('0') << setw(5) << delay_int;
+	delay_str = delay_sout.str();
+
+	// バッファクリア
+	memset(sendbuf, 0x00, sizeof(sendbuf));
+
+	sendbuf[0] = 'j';
+	sendbuf[1] = mode;
+	sendbuf[2] = sign1;
+	for (int i = 3; i < 7; i++)	sendbuf[i] = forward_str[i - 3];
+	sendbuf[7] = sign2;
+	for (int i = 8; i < 12; i++) sendbuf[i] = crosswise_str[i - 8];
+	for (int i = 12; i < 15; i++) sendbuf[i] = delay_str[i - 8];
+	sendbuf[15] = 'x';
+
+	// 通信バッファクリア
+	PurgeComm(hEncoderComm, PURGE_RXCLEAR);
+	// 送信
+	WriteFile(hEncoderComm, &sendbuf, sizeof(sendbuf), &len, NULL);
+
+	// バッファクリア
+	memset(receive_data, 0x00, sizeof(receive_data));
+	// 通信バッファクリア
+	PurgeComm(hEncoderComm, PURGE_RXCLEAR);
+	// Arduinoからデータを受信
+	ReadFile(hEncoderComm, &receive_data, sizeof(receive_data), &len, NULL);
+
+	for (int i = 0; i < len; i++)
+	{
+		cout << receive_data[i] ;
+	}
+	cout << endl;
+}
+
+void DrivingControl::waitDriveComplete()
+{
+	while (leftCount < aimCount_L && rightCount < aimCount_R)
+	{
+		getEncoderCount();
+	}
+	leftCount = 0;
+	rightCount = 0;
+}
+
+
 // 外積で回転角を計算
-void	DrivingControl::calcRotationAngle(int LRcount[])
+void	DrivingControl::calcRotationAngle()
 {
 	// 3点からベクトルを2つ用意
 	int vector1_x, vector1_y;
@@ -128,13 +334,13 @@ void	DrivingControl::calcRotationAngle(int LRcount[])
 	cout << "rad:" << radian << ", deg:" << radian / PI * 180 << endl;
 	cout << "rad:" << orientation << ", deg:" << orientation / PI * 180 << endl;
 
-	LRcount[0] = (wheelDistance * radian) / (dDISTANCE * leftCoefficient); // Left
-	LRcount[1] = -(wheelDistance * radian) / (dDISTANCE * rightCoefficient); // Right
+	aimCount_L = (wheelDistance * radian) / (dDISTANCE * leftCoefficient); // Left
+	aimCount_R = -(wheelDistance * radian) / (dDISTANCE * rightCoefficient); // Right
 
 }
 
 // 距離を計算
-void	DrivingControl::calcMovingDistance(int LRcount[])
+void	DrivingControl::calcMovingDistance()
 {
 	double	x_disp = x_next - x_now;
 	double	y_disp = y_next - y_now;
@@ -143,23 +349,33 @@ void	DrivingControl::calcMovingDistance(int LRcount[])
 
 	cout << "distance[m]:" << distance * 0.05 << endl;
 
-	LRcount[0] = 5*distance / (dDISTANCE * leftCoefficient); // Left
-	LRcount[1] = 5*distance / (dDISTANCE * rightCoefficient); // Right
+	aimCount_L = 5*distance / (dDISTANCE * leftCoefficient); // Left
+	aimCount_R = 5*distance / (dDISTANCE * rightCoefficient); // Right
 
+}
+
+void DrivingControl::run()
+{
+	while (getNextPoint())
+	{
+		calcRotationAngle();
+		if (aimCount_L > 0) sendDrivingCommand(RIGHT);
+		else sendDrivingCommand(LEFT);
+		cout << "回転" << endl;
+		waitDriveComplete();
+
+		calcMovingDistance();
+		if (aimCount_L > 0) sendDrivingCommand(FORWARD);
+		else sendDrivingCommand(BACKWARD);
+		cout << "直進" << endl;
+		waitDriveComplete();
+	}
 }
 
 void main()
 {
-	int LR[2];
-
-	DrivingControl DC("test01.rt" , 1 , 1);
-	while (DC.getNextPoint())
-	{
-		DC.calcRotationAngle(LR);
-		cout << "回転:" << LR[0] << "," << LR[1] << endl;
-		DC.calcMovingDistance(LR);
-		cout << "直進:" << LR[0] << "," << LR[1] << endl;
-	}
+	DrivingControl DC("test01.rt" , 1 , 1 , ENCODER_COM , CONTROLLER_COM);
+	DC.run();
 
 	cout << "complete" << endl;
 }
