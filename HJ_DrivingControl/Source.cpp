@@ -5,14 +5,13 @@
 #include <iomanip>
 #include <Windows.h>
 
-
 #define PI 3.14159265359
 
 using namespace std;
 
 const string DIRPATH = "C:\\Users\\user\\Documents\\なかむら\\つくばチャレンジ2015\\測定データ\\20151023130844";
-const int ENCODER_COM = 1;
-const int CONTROLLER_COM = 1;
+const int ENCODER_COM = 9;
+const int CONTROLLER_COM = 17;
 
 /*
 *	概要:
@@ -65,12 +64,14 @@ private:
 	string::size_type	x_pos, y_pos;
 
 	// 駆動指令計算用変数
-	float	orientation;			// 現在向いている方位角(スタート直後を0として右向きが正)
+	double	orientation;			// 現在向いている方位角(スタート直後を0として右向きが正)
 	double	radian;					// 計算後の回転角
 	double	distance;				// 計算後の移動距離
 
 	const int wheelDistance = 530 / 2;	// タイヤ間距離の半分[mm]
-	const double dDISTANCE = 24.87094184; // 1カウント当たりの距離[mm](タイヤ径を72分割)
+	//const double dDISTANCE = 24.87094184; // 1カウント当たりの距離[mm](タイヤ径を72分割)
+	const double dDISTANCE = 1; // 1カウント当たりの距離[mm](タイヤ径を72分割)
+
 	const double leftCoefficient;
 	const double rightCoefficient;
 
@@ -133,6 +134,7 @@ DrivingControl::DrivingControl(string fname, double coefficientL, double coeffic
 	y_now = y_next;
 
 	getArduinoHandle(encoderCOM, hEncoderComm);
+	getArduinoHandle(controllerCOM, hControllerComm);
 }
 
 /*
@@ -174,18 +176,18 @@ void DrivingControl::getEncoderCount()
 	unsigned long	len;
 
 	// バッファクリア
-	memset(sendbuf, 0x00, sizeof(sendbuf));
+	memset(sendbuf, 0x01, sizeof(sendbuf));
 	// 通信バッファクリア
 	PurgeComm(hEncoderComm, PURGE_RXCLEAR);
 	// 送信
 	WriteFile(hEncoderComm, &sendbuf, 1, &len, NULL);
-
 	// バッファクリア
 	memset(receive_data, 0x00, sizeof(receive_data));
 	// 通信バッファクリア
 	PurgeComm(hEncoderComm, PURGE_RXCLEAR);
 	// Arduinoからデータを受信
 	ReadFile(hEncoderComm, &receive_data, 2, &len, NULL);
+	
 
 	//初期化されていなければ初期化(初めのデータを捨てる)
 	if (!isEncoderInitialized)
@@ -196,6 +198,7 @@ void DrivingControl::getEncoderCount()
 
 	leftCount += (signed char)receive_data[0];
 	rightCount += (signed char)receive_data[1];
+	//cout << "L:" << leftCount << ",R:" << rightCount << endl;
 }
 
 void DrivingControl::sendDrivingCommand( Direction direction)
@@ -277,21 +280,30 @@ void DrivingControl::sendDrivingCommand( Direction direction)
 	for (int i = 3; i < 7; i++)	sendbuf[i] = forward_str[i - 3];
 	sendbuf[7] = sign2;
 	for (int i = 8; i < 12; i++) sendbuf[i] = crosswise_str[i - 8];
-	for (int i = 12; i < 15; i++) sendbuf[i] = delay_str[i - 8];
-	sendbuf[15] = 'x';
+	for (int i = 12; i < 17; i++) sendbuf[i] = delay_str[i - 12];
+	sendbuf[17] = 'x';
 
 	// 通信バッファクリア
-	PurgeComm(hEncoderComm, PURGE_RXCLEAR);
+	PurgeComm(hControllerComm, PURGE_RXCLEAR);
 	// 送信
-	WriteFile(hEncoderComm, &sendbuf, sizeof(sendbuf), &len, NULL);
+	WriteFile(hControllerComm, &sendbuf, sizeof(sendbuf), &len, NULL);
+
+	cout << "send:";
+	for (int i = 0; i < len; i++)
+	{
+		cout << sendbuf[i];
+	}
+	cout << endl;
 
 	// バッファクリア
 	memset(receive_data, 0x00, sizeof(receive_data));
 	// 通信バッファクリア
-	PurgeComm(hEncoderComm, PURGE_RXCLEAR);
+	PurgeComm(hControllerComm, PURGE_RXCLEAR);
+	len = 0;
 	// Arduinoからデータを受信
-	ReadFile(hEncoderComm, &receive_data, sizeof(receive_data), &len, NULL);
+	//ReadFile(hControllerComm, &receive_data, sizeof(receive_data), &len, NULL);
 
+	cout << "receive:";
 	for (int i = 0; i < len; i++)
 	{
 		cout << receive_data[i] ;
@@ -301,12 +313,13 @@ void DrivingControl::sendDrivingCommand( Direction direction)
 
 void DrivingControl::waitDriveComplete()
 {
-	while (leftCount < aimCount_L && rightCount < aimCount_R)
+	while (abs(leftCount) < abs(aimCount_L) && abs(rightCount) < abs(aimCount_R))
 	{
 		getEncoderCount();
 	}
 	leftCount = 0;
 	rightCount = 0;
+	sendDrivingCommand(STOP);
 }
 
 
@@ -325,9 +338,9 @@ void	DrivingControl::calcRotationAngle()
 
 	// a×bと|a|,|b|を算出してarcsinで回転角を算出
 	int det = vector1_x * vector2_y - vector1_y * vector2_x;
-	double d1 = sqrt((vector1_x*vector1_x + vector1_y*vector1_y));
-	double d2 = sqrt((vector2_x*vector2_x + vector2_y*vector2_y));
-	radian = asin(det / (d1*d2));
+	double d1 = pow((double)(vector1_x*vector1_x + vector1_y*vector1_y),0.5);
+	double d2 = pow((double)(vector2_x*vector2_x + vector2_y*vector2_y),0.5);
+	radian = asin((double)det / (d1*d2));
 
 	orientation += radian;
 
@@ -336,6 +349,8 @@ void	DrivingControl::calcRotationAngle()
 
 	aimCount_L = (wheelDistance * radian) / (dDISTANCE * leftCoefficient); // Left
 	aimCount_R = -(wheelDistance * radian) / (dDISTANCE * rightCoefficient); // Right
+
+	cout << "L:" << aimCount_L << ",R:" << aimCount_R << endl;
 
 }
 
@@ -352,10 +367,14 @@ void	DrivingControl::calcMovingDistance()
 	aimCount_L = 5*distance / (dDISTANCE * leftCoefficient); // Left
 	aimCount_R = 5*distance / (dDISTANCE * rightCoefficient); // Right
 
+	cout << "L:" << aimCount_L << ",R:" << aimCount_R << endl;
+
 }
 
 void DrivingControl::run()
 {
+	getEncoderCount();
+
 	while (getNextPoint())
 	{
 		calcRotationAngle();
@@ -363,18 +382,20 @@ void DrivingControl::run()
 		else sendDrivingCommand(LEFT);
 		cout << "回転" << endl;
 		waitDriveComplete();
+		Sleep(1000);
 
 		calcMovingDistance();
 		if (aimCount_L > 0) sendDrivingCommand(FORWARD);
 		else sendDrivingCommand(BACKWARD);
 		cout << "直進" << endl;
 		waitDriveComplete();
+		Sleep(1000);
 	}
 }
 
 void main()
 {
-	DrivingControl DC("test01.rt" , 1 , 1 , ENCODER_COM , CONTROLLER_COM);
+	DrivingControl DC("rouka_migi2.rt", 24.0086517664 / 1.005, 23.751783167, ENCODER_COM, CONTROLLER_COM);
 	DC.run();
 
 	cout << "complete" << endl;
