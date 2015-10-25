@@ -91,8 +91,11 @@ private:
 	void getEncoderCount();
 	///  Arduinoへ駆動指令を送信
 	void sendDrivingCommand(Direction direction);
+	void sendDrivingCommand(Direction direction, int count);
 	/// 指令した駆動の完了を待機
 	void waitDriveComplete();
+	void waitDriveComplete_FF();
+	int waittime;
 
 public:
 	// もろもろの初期化処理
@@ -107,6 +110,7 @@ public:
 	void	calcMovingDistance();
 
 	void	run();
+	void	run_feedforward();
 };
 
 /*
@@ -201,7 +205,7 @@ void DrivingControl::getEncoderCount()
 	//cout << "L:" << leftCount << ",R:" << rightCount << endl;
 }
 
-void DrivingControl::sendDrivingCommand( Direction direction)
+void DrivingControl::sendDrivingCommand( Direction direction , int count)
 {
 	unsigned char	sendbuf[18];
 	unsigned char	receive_data[18];
@@ -212,6 +216,124 @@ void DrivingControl::sendDrivingCommand( Direction direction)
 	int				forward_int, crosswise_int, delay_int;
 	ostringstream	forward_sout, crosswise_sout, delay_sout;
 	string			forward_str , crosswise_str, delay_str;
+
+	mode = '1';
+	delay_int = 99999;
+
+	if ( count < 0) count *= -1;
+
+	switch (direction)
+	{
+	case STOP:
+		mode = '0';
+		forward_int = 0;
+		crosswise_int = 0;
+		break;
+
+	case FORWARD:
+		forward_int = -1000;
+		crosswise_int = 405;
+		delay_int = count / 12.81 * 1000;
+		break;
+
+	case BACKWARD:
+		forward_int = 600;
+		crosswise_int = 509;
+		delay_int = count / 3.125 * 1000;
+		break;
+
+	case RIGHT:
+		forward_int = -380;
+		crosswise_int = -1500;
+		delay_int = count / 10.875 * 1000;
+		break;
+
+	case LEFT:
+		forward_int = 0;
+		crosswise_int = 1500;
+		delay_int = count / 10.25 * 1000;
+		break;
+
+	default:
+		break;
+	}
+
+	waittime = delay_int;
+
+	if (forward_int < 0)
+	{
+		forward_int *= -1;
+		sign1 = '1';
+	}
+	else sign1 = '0';
+
+	forward_sout << setfill('0') << setw(4) << forward_int;
+	forward_str = forward_sout.str();
+
+	if (crosswise_int < 0)
+	{
+		crosswise_int *= -1;
+		sign2 = '1';
+	}
+	else sign2 = '0';
+
+	crosswise_sout << setfill('0') << setw(4) << crosswise_int;
+	crosswise_str = crosswise_sout.str();
+
+	delay_sout << setfill('0') << setw(5) << delay_int;
+	delay_str = delay_sout.str();
+
+	// バッファクリア
+	memset(sendbuf, 0x00, sizeof(sendbuf));
+
+	sendbuf[0] = 'j';
+	sendbuf[1] = mode;
+	sendbuf[2] = sign1;
+	for (int i = 3; i < 7; i++)	sendbuf[i] = forward_str[i - 3];
+	sendbuf[7] = sign2;
+	for (int i = 8; i < 12; i++) sendbuf[i] = crosswise_str[i - 8];
+	for (int i = 12; i < 17; i++) sendbuf[i] = delay_str[i - 12];
+	sendbuf[17] = 'x';
+
+	// 通信バッファクリア
+	PurgeComm(hControllerComm, PURGE_RXCLEAR);
+	// 送信
+	WriteFile(hControllerComm, &sendbuf, sizeof(sendbuf), &len, NULL);
+
+	cout << "send:";
+	for (int i = 0; i < len; i++)
+	{
+		cout << sendbuf[i];
+	}
+	cout << endl;
+
+	// バッファクリア
+	memset(receive_data, 0x00, sizeof(receive_data));
+	// 通信バッファクリア
+	PurgeComm(hControllerComm, PURGE_RXCLEAR);
+	len = 0;
+	// Arduinoからデータを受信
+	//ReadFile(hControllerComm, &receive_data, sizeof(receive_data), &len, NULL);
+
+	cout << "receive:";
+	for (int i = 0; i < len; i++)
+	{
+		cout << receive_data[i] ;
+	}
+	cout << endl;
+}
+
+void DrivingControl::sendDrivingCommand(Direction direction)
+{
+	unsigned char	sendbuf[18];
+	unsigned char	receive_data[18];
+	unsigned long	len;
+
+	unsigned char	mode;
+	unsigned char	sign1, sign2;
+	int				forward_int, crosswise_int, delay_int;
+	ostringstream	forward_sout, crosswise_sout, delay_sout;
+	string			forward_str, crosswise_str, delay_str;
 
 	mode = '1';
 	delay_int = 99999;
@@ -306,20 +428,9 @@ void DrivingControl::sendDrivingCommand( Direction direction)
 	cout << "receive:";
 	for (int i = 0; i < len; i++)
 	{
-		cout << receive_data[i] ;
+		cout << receive_data[i];
 	}
 	cout << endl;
-}
-
-void DrivingControl::waitDriveComplete()
-{
-	while (abs(leftCount) < abs(aimCount_L) && abs(rightCount) < abs(aimCount_R))
-	{
-		getEncoderCount();
-	}
-	leftCount = 0;
-	rightCount = 0;
-	sendDrivingCommand(STOP);
 }
 
 
@@ -342,6 +453,9 @@ void	DrivingControl::calcRotationAngle()
 	double d2 = pow((double)(vector2_x*vector2_x + vector2_y*vector2_y),0.5);
 	radian = asin((double)det / (d1*d2));
 
+	int inner = vector1_x * vector1_y + vector2_y * vector2_x;
+	//radian = atan2(det, inner);
+
 	orientation += radian;
 
 	cout << "rad:" << radian << ", deg:" << radian / PI * 180 << endl;
@@ -349,8 +463,10 @@ void	DrivingControl::calcRotationAngle()
 
 	aimCount_L = (wheelDistance * radian) / (dDISTANCE * leftCoefficient); // Left
 	aimCount_R = -(wheelDistance * radian) / (dDISTANCE * rightCoefficient); // Right
+	if (aimCount_L) aimCount_L += abs(aimCount_L) / aimCount_L;
+	if (aimCount_R) aimCount_R += abs(aimCount_R) / aimCount_R;
 
-	cout << "L:" << aimCount_L << ",R:" << aimCount_R << endl;
+	//cout << "L:" << aimCount_L << ",R:" << aimCount_R << endl;
 
 }
 
@@ -367,10 +483,51 @@ void	DrivingControl::calcMovingDistance()
 	aimCount_L = 5*distance / (dDISTANCE * leftCoefficient); // Left
 	aimCount_R = 5*distance / (dDISTANCE * rightCoefficient); // Right
 
-	cout << "L:" << aimCount_L << ",R:" << aimCount_R << endl;
+	//cout << "L:" << aimCount_L << ",R:" << aimCount_R << endl;
 
 }
 
+void DrivingControl::waitDriveComplete()
+{
+	while (abs(leftCount) < abs(aimCount_L) && abs(rightCount) < abs(aimCount_R))
+	{
+		getEncoderCount();
+	}
+	leftCount = 0;
+	rightCount = 0;
+	sendDrivingCommand(STOP);
+}
+
+void DrivingControl::waitDriveComplete_FF()
+{
+	cout << "Wait time [millisec]:" << waittime << endl;
+	Sleep(waittime + 1000);
+	leftCount = 0;
+	rightCount = 0;
+	sendDrivingCommand(STOP);
+}
+
+void DrivingControl::run_feedforward()
+{
+	getEncoderCount();
+
+	while (getNextPoint())
+	{
+		calcRotationAngle();
+		if (aimCount_L > 0) sendDrivingCommand(RIGHT , aimCount_L);
+		else sendDrivingCommand(LEFT, aimCount_L);
+		cout << "回転" << endl;
+		waitDriveComplete_FF();
+		Sleep(500);
+
+		calcMovingDistance();
+		if (aimCount_L > 0) sendDrivingCommand(FORWARD, aimCount_L);
+		else sendDrivingCommand(BACKWARD, aimCount_L);
+		cout << "直進" << endl;
+		waitDriveComplete_FF();
+		Sleep(500);
+	}
+}
 void DrivingControl::run()
 {
 	getEncoderCount();
@@ -395,8 +552,8 @@ void DrivingControl::run()
 
 void main()
 {
-	DrivingControl DC("rouka_migi2.rt", 24.0086517664 / 1.005, 23.751783167, ENCODER_COM, CONTROLLER_COM);
-	DC.run();
+	DrivingControl DC("rouka_migi6.rt", 24.0086517664 / 1.005, 23.751783167, ENCODER_COM, CONTROLLER_COM);
+	DC.run_feedforward();
 
 	cout << "complete" << endl;
 }
