@@ -163,6 +163,7 @@ DrivingControl::DrivingControl(string fname, double coefficientL, double coeffic
 	getArduinoHandle(encoderCOM, hEncoderComm);
 	getArduinoHandle(controllerCOM, hControllerComm);
 
+	shMem.reset();
 	shMem.setShMemData(false, EMERGENCY);
 
 }
@@ -468,13 +469,15 @@ void DrivingControl::checkEmergencyStop(Timer& timer)
 		right = true;
 	}
 
-	if ((left && right) || shMem.getShMemData(EMERGENCY))
+	if ((left && right) )
 	{
+		//sendDrivingCommand(STOP);
 		if (MessageBoxA(NULL, "Ç‡ÇµÇ©ÇµÇƒîÒèÌí‚é~ÅH", "Ç‡ÇµÇ©ÇµÇƒÅI", MB_YESNO | MB_ICONSTOP) == IDYES)
 		{
 			sendDrivingCommand(nowDirection, waittime - time);
 			Sleep(1000);
 			timer.getLapTime();
+			//shMem.setShMemData(false, EMERGENCY);
 		}
 	}
 }
@@ -490,14 +493,14 @@ void DrivingControl::waitDriveComplete_FF()
 	Timer waitDriveTimer;
 	Sleep(1000);
 	waitDriveTimer.Start();
-	/*
+	
 	while (waitDriveTimer.getLapTime(1, Timer::millisec, false) < waittime)
 	{
 		getEncoderCount();
 		checkEmergencyStop(waitDriveTimer);
 	}
-	*/
-	Sleep(waittime);
+	
+	//Sleep(waittime);
 
 	leftCount = 0;
 	rightCount = 0;
@@ -549,7 +552,7 @@ void DrivingControl::run()
 
 void main()
 {
-	DrivingControl DC("test08.rt", 24.0086517664 / 1.005, 23.751783167, ENCODER_COM, CONTROLLER_COM);
+	DrivingControl DC("test07.rt", 24.0086517664 / 1.005, 23.751783167, ENCODER_COM, CONTROLLER_COM);
 	DC.run_FF();
 
 	cout << "complete" << endl;
