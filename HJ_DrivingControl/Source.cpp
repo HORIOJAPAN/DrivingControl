@@ -97,7 +97,7 @@ private:
 	int		controllerCOM;
 	HANDLE	hControllerComm;
 	enum Direction	{ STOP, FORWARD, BACKWARD , RIGHT , LEFT };
-	int		aimCount_L, aimCount_R;
+	float		aimCount_L, aimCount_R;
 
 
 	/// エンコーダからカウント数を取得して積算する
@@ -112,7 +112,7 @@ private:
 	int waittime;
 	Direction nowDirection;
 
-	int checkEmergencyStop(Timer& timer);
+	void checkEmergencyStop(Timer& timer);
 	void returnEmergency(int isEmergency);
 
 public:
@@ -436,20 +436,21 @@ void DrivingControl::waitDriveComplete()
 	sendDrivingCommand(STOP);
 }
 
-int DrivingControl::checkEmergencyStop(Timer& timer)
+void DrivingControl::checkEmergencyStop(Timer& timer)
 {
 	bool left = false;
 	bool right = false;
 
 	int time = timer.getLapTime(1, Timer::millisec, false);
-
+	/*
 	cout << timer.getLapTime(1, Timer::millisec, false) << "millisec" << endl;
 	cout << timer.getLapTime(1, Timer::millisec, false) * abs(aimCount_L) << "," << abs(leftCount + 1) * waittime << endl;
 	cout << leftCount << "," << rightCount << endl;
 	cout << aimCount_L << "," << aimCount_R << endl;
 	cout << waittime << endl;
+	*/
 
-	if (((float)time + 1000) / (float)waittime * 100 > 98 ) return 0;
+	if (((float)time + 1000) / (float)waittime * 100 > 98 ) return;
 
 	if (time * abs(aimCount_L) > abs(leftCount) * waittime)
 	{
@@ -462,10 +463,11 @@ int DrivingControl::checkEmergencyStop(Timer& timer)
 
 	if (left && right)
 	{
-		if (MessageBoxA(NULL, "もしかして非常停止？", "もしかして！", MB_YESNO | MB_ICONSTOP) == IDOK)
+		if (MessageBoxA(NULL, "もしかして非常停止？", "もしかして！", MB_YESNO | MB_ICONSTOP) == IDYES)
 		{
-			timer.getLapTime();
 			sendDrivingCommand(nowDirection, waittime - time);
+			Sleep(1000);
+			timer.getLapTime();
 		}
 	}
 }
@@ -481,12 +483,14 @@ void DrivingControl::waitDriveComplete_FF()
 	Timer waitDriveTimer;
 	Sleep(1000);
 	waitDriveTimer.Start();
-
+	/*
 	while (waitDriveTimer.getLapTime(1, Timer::millisec, false) < waittime)
 	{
 		getEncoderCount();
 		checkEmergencyStop(waitDriveTimer);
 	}
+	*/
+	Sleep(waittime);
 
 	leftCount = 0;
 	rightCount = 0;
@@ -538,7 +542,7 @@ void DrivingControl::run()
 
 void main()
 {
-	DrivingControl DC("test07.rt", 24.0086517664 / 1.005, 23.751783167, ENCODER_COM, CONTROLLER_COM);
+	DrivingControl DC("test08.rt", 24.0086517664 / 1.005, 23.751783167, ENCODER_COM, CONTROLLER_COM);
 	DC.run_FF();
 
 	cout << "complete" << endl;
