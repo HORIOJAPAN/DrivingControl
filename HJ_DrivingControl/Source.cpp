@@ -11,6 +11,7 @@
 #include <Windows.h>
 
 #include "Timer.h"
+#include "SharedMemory.h"
 
 #define PI 3.14159265359
 
@@ -99,6 +100,9 @@ private:
 	enum Direction	{ STOP, FORWARD, BACKWARD , RIGHT , LEFT };
 	float		aimCount_L, aimCount_R;
 
+	SharedMemory<int> shMem;
+	enum { EMERGENCY };
+
 
 	/// エンコーダからカウント数を取得して積算する
 	void getEncoderCount();
@@ -136,7 +140,8 @@ public:
  * 経路ファイルを読み込んでヘッダをとばす
  */
 DrivingControl::DrivingControl(string fname, double coefficientL, double coefficientR, int ecdrCOM , int ctrlrCOM)
-	: fileName(fname), leftCoefficient(coefficientL), rightCoefficient(coefficientR), encoderCOM(ecdrCOM), controllerCOM(ctrlrCOM)
+	: fileName(fname), leftCoefficient(coefficientL), rightCoefficient(coefficientR), encoderCOM(ecdrCOM), controllerCOM(ctrlrCOM),
+	shMem(SharedMemory<int>("unko"))
 {
 	// 経路データを読み込む
 	ifs.open(fileName);
@@ -157,6 +162,8 @@ DrivingControl::DrivingControl(string fname, double coefficientL, double coeffic
 
 	getArduinoHandle(encoderCOM, hEncoderComm);
 	getArduinoHandle(controllerCOM, hControllerComm);
+
+	shMem.setShMemData(false, EMERGENCY);
 
 }
 
@@ -461,7 +468,7 @@ void DrivingControl::checkEmergencyStop(Timer& timer)
 		right = true;
 	}
 
-	if (left && right)
+	if ((left && right) || shMem.getShMemData(EMERGENCY))
 	{
 		if (MessageBoxA(NULL, "もしかして非常停止？", "もしかして！", MB_YESNO | MB_ICONSTOP) == IDYES)
 		{
