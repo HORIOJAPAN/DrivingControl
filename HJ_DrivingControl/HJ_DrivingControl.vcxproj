@@ -68,11 +68,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\cvPCDtest\cvPCDtest\Timer.cpp" />
+    <ClCompile Include="..\..\pointcloudimage2\cvPCDtest\Timer.cpp" />
     <ClCompile Include="Source.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\cvPCDtest\cvPCDtest\Timer.h" />
+    <ClInclude Include="..\..\pointcloudimage2\cvPCDtest\Timer.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

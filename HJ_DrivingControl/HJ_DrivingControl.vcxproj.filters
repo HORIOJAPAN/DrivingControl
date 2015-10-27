@@ -18,12 +18,12 @@
     <ClCompile Include="Source.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\cvPCDtest\cvPCDtest\Timer.cpp">
+    <ClCompile Include="..\..\pointcloudimage2\cvPCDtest\Timer.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\cvPCDtest\cvPCDtest\Timer.h">
+    <ClInclude Include="..\..\pointcloudimage2\cvPCDtest\Timer.h">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
   </ItemGroup>

@@ -10,15 +10,15 @@
 #include <iomanip>
 #include <Windows.h>
 
-#include <Timer.h>
+#include "Timer.h"
 
 #define PI 3.14159265359
 
 using namespace std;
 
 const string DIRPATH = "C:\\Users\\user\\Documents\\なかむら\\つくばチャレンジ2015\\測定データ\\20151023130844";
-const int ENCODER_COM = 9;
-const int CONTROLLER_COM = 17;
+const int ENCODER_COM = 10;
+const int CONTROLLER_COM = 9;
 
 /*
 *	概要:
@@ -250,7 +250,7 @@ void DrivingControl::sendDrivingCommand( Direction direction , int count)
 	case FORWARD:
 		forward_int = -1000;
 		crosswise_int = 405;
-		delay_int = count / 12.81 * 1000;
+		delay_int = count / 9.0 * 1000;
 		break;
 
 	case BACKWARD:
@@ -520,17 +520,28 @@ int DrivingControl::checkEmergencyStop(Timer& timer)
 	bool left = false;
 	bool right = false;
 
-	if (timer.getLapTime(1, Timer::millisec, false) * abs(aimCount_L) > abs(leftCount) * waittime * 2)
+	int time = timer.getLapTime(1, Timer::millisec, false);
+
+	cout << timer.getLapTime(1, Timer::millisec, false) << "millisec" << endl;
+	cout << timer.getLapTime(1, Timer::millisec, false) * abs(aimCount_L) << "," << abs(leftCount + 1) * waittime << endl;
+	cout << leftCount << "," << rightCount << endl;
+	cout << aimCount_L << "," << aimCount_R << endl;
+	cout << waittime << endl;
+
+	if (((float)time + 1000) / (float)waittime * 100 > 98 ) return 0;
+
+	if (time * abs(aimCount_L) > abs(leftCount) * waittime)
 	{
 		left = true;
 	}
-	if (timer.getLapTime(1, Timer::millisec, false) * abs(aimCount_L) > abs(leftCount) * waittime * 2)
+	if (time * abs(aimCount_R) > abs(rightCount) * waittime)
 	{
 		right = true;
 	}
 
 	if (left && right) return 1;
 	else return 0;
+
 }
 void DrivingControl::returnEmergency(int isEmergency)
 {
@@ -543,12 +554,13 @@ void DrivingControl::waitDriveComplete_FF()
 	cout << "Wait time [millisec]:" << waittime << endl;
 
 	Timer waitDriveTimer;
+	Sleep(1000);
 	waitDriveTimer.Start();
 
 	while (waitDriveTimer.getLapTime(1, Timer::millisec, false) < waittime)
 	{
 		getEncoderCount();
-		checkEmergencyStop(waitDriveTimer);
+		returnEmergency( checkEmergencyStop(waitDriveTimer));
 	}
 
 	leftCount = 0;
@@ -601,7 +613,7 @@ void DrivingControl::run()
 
 void main()
 {
-	DrivingControl DC("rouka_migi6.rt", 24.0086517664 / 1.005, 23.751783167, ENCODER_COM, CONTROLLER_COM);
+	DrivingControl DC("test07.rt", 24.0086517664 / 1.005, 23.751783167, ENCODER_COM, CONTROLLER_COM);
 	DC.run_FF();
 
 	cout << "complete" << endl;
