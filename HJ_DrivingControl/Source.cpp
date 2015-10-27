@@ -1,9 +1,16 @@
+/*
+ *	経路情報のテキストファイル(拡張子.rt)を上から順に読み込んで移動距離，回転を計算し，
+ *	シリアル通信で駆動指令を送信する．
+ */
+
 #include <fstream>
 #include <iostream>
 #include <string>
 #include <sstream>
 #include <iomanip>
 #include <Windows.h>
+
+#include <Timer.h>
 
 #define PI 3.14159265359
 
@@ -21,7 +28,7 @@ const int CONTROLLER_COM = 17;
 *	返り値:
 *		なし
 */
-void getArduinoHandle(int arduinoCOM, HANDLE& hComm)
+void getArduinoHandle(int arduinoCOM, HANDLE& hComm , int timeoutmillisec = 0)
 {
 	//シリアルポートを開いてハンドルを取得
 	string com = "\\\\.\\COM" + to_string(arduinoCOM);
@@ -42,13 +49,18 @@ void getArduinoHandle(int arduinoCOM, HANDLE& hComm)
 		lpTest.Parity = NOPARITY;
 		lpTest.StopBits = ONESTOPBIT;
 		SetCommState(hComm, &lpTest);
+
+		COMMTIMEOUTS lpTimeout;
+		GetCommTimeouts(hComm, &lpTimeout);
+		lpTimeout.ReadIntervalTimeout = timeoutmillisec;
+		SetCommTimeouts(hComm, &lpTimeout);
+
 	}
 }
 
 class DrivingControl
 {
-private:
-	
+private:	
 	// 経路データ読み取り用変数
 	const string	fileName;			// 経路ファイル名
 	const string	searchWord = ",";	// データの区切り識別用の","
@@ -87,6 +99,7 @@ private:
 	enum Direction	{ STOP, FORWARD, BACKWARD , RIGHT , LEFT };
 	int		aimCount_L, aimCount_R;
 
+
 	/// エンコーダからカウント数を取得して積算する
 	void getEncoderCount();
 	///  Arduinoへ駆動指令を送信
@@ -96,6 +109,9 @@ private:
 	void waitDriveComplete();
 	void waitDriveComplete_FF();
 	int waittime;
+
+	int checkEmergencyStop(Timer& timer);
+	void returnEmergency(int isEmergency);
 
 public:
 	// もろもろの初期化処理
@@ -110,7 +126,7 @@ public:
 	void	calcMovingDistance();
 
 	void	run();
-	void	run_feedforward();
+	void	run_FF();
 };
 
 /*
@@ -139,6 +155,7 @@ DrivingControl::DrivingControl(string fname, double coefficientL, double coeffic
 
 	getArduinoHandle(encoderCOM, hEncoderComm);
 	getArduinoHandle(controllerCOM, hControllerComm);
+
 }
 
 /*
@@ -498,16 +515,48 @@ void DrivingControl::waitDriveComplete()
 	sendDrivingCommand(STOP);
 }
 
+int DrivingControl::checkEmergencyStop(Timer& timer)
+{
+	bool left = false;
+	bool right = false;
+
+	if (timer.getLapTime(1, Timer::millisec, false) * abs(aimCount_L) > abs(leftCount) * waittime * 2)
+	{
+		left = true;
+	}
+	if (timer.getLapTime(1, Timer::millisec, false) * abs(aimCount_L) > abs(leftCount) * waittime * 2)
+	{
+		right = true;
+	}
+
+	if (left && right) return 1;
+	else return 0;
+}
+void DrivingControl::returnEmergency(int isEmergency)
+{
+	if (!isEmergency) return;
+	MessageBoxA(NULL, "もしかして非常停止？", "もしかして！", MB_YESNO);
+}
+
 void DrivingControl::waitDriveComplete_FF()
 {
 	cout << "Wait time [millisec]:" << waittime << endl;
-	Sleep(waittime + 1000);
+
+	Timer waitDriveTimer;
+	waitDriveTimer.Start();
+
+	while (waitDriveTimer.getLapTime(1, Timer::millisec, false) < waittime)
+	{
+		getEncoderCount();
+		checkEmergencyStop(waitDriveTimer);
+	}
+
 	leftCount = 0;
 	rightCount = 0;
-	sendDrivingCommand(STOP);
+	//sendDrivingCommand(STOP);
 }
 
-void DrivingControl::run_feedforward()
+void DrivingControl::run_FF()
 {
 	getEncoderCount();
 
@@ -553,7 +602,7 @@ void DrivingControl::run()
 void main()
 {
 	DrivingControl DC("rouka_migi6.rt", 24.0086517664 / 1.005, 23.751783167, ENCODER_COM, CONTROLLER_COM);
-	DC.run_feedforward();
+	DC.run_FF();
 
 	cout << "complete" << endl;
 }
